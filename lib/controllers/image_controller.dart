@@ -6,9 +6,14 @@ class ImageController {
   final String _apiKey = '46271742-b02b9c5c5541f922bede1c54a';
   final String _baseUrl = 'https://pixabay.com/api/';
 
-  Future<List<ImageModel>> fetchImages(int page) async {
-    final response = await http
-        .get(Uri.parse('$_baseUrl?key=$_apiKey&image_type=photo&page=$page'));
+  Future<List<ImageModel>> fetchImages({
+    required int page,
+    String searchQuery = "",
+  }) async {
+    final response = await http.get(
+      Uri.parse(
+          '$_baseUrl?key=$_apiKey&q=$searchQuery&image_type=photo&page=$page'),
+    );
 
     if (response.statusCode == 200) {
       final jsonData = json.decode(response.body);
@@ -19,5 +24,3 @@ class ImageController {
     }
   }
 }
-
-// https://pixabay.com/api/?key=46271742-b02b9c5c5541f922bede1c54a&image_type=photo

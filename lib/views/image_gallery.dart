@@ -1,8 +1,12 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
-import 'package:font_awesome_flutter/font_awesome_flutter.dart';
-import 'package:gallery_view/widgets/full_screen_bottom_sheet.dart';
+import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
+import 'package:gallery_view/utils/categories.dart';
+import '../models/image_model.dart';
+import '../widgets/image_card.dart';
 import '../providers/image_provider.dart';
+import '../providers/category_provider.dart'; // Ensure you have your category provider imported
+import 'category_images_view.dart';
 
 class GalleryView extends ConsumerStatefulWidget {
   @override
@@ -12,161 +16,154 @@ class GalleryView extends ConsumerStatefulWidget {
 class _GalleryViewState extends ConsumerState<GalleryView> {
   final ScrollController _scrollController = ScrollController();
   bool _isDataReady = false;
+  final TextEditingController _searchController = TextEditingController();
+  final List<String> _categories = Categories().categories;
 
   @override
   void initState() {
     super.initState();
+    _fetchInitialImages();
+    _scrollController.addListener(_onScroll);
+  }
 
-    Future.delayed(const Duration(seconds: 2), () async {
+  Future<void> _fetchInitialImages() async {
+    await Future.delayed(const Duration(seconds: 2), () async {
       await ref.read(imageProvider.notifier).fetchImages();
       setState(() {
-        _isDataReady = true; // Data is ready, show the gallery
+        _isDataReady = true;
       });
 
-      // Ensure images load for large screens
       WidgetsBinding.instance.addPostFrameCallback((_) {
         _checkIfMoreImagesNeeded();
       });
     });
-
-    _scrollController.addListener(_onScroll);
   }
 
   void _onScroll() {
     if (_scrollController.position.pixels ==
         _scrollController.position.maxScrollExtent) {
-      // Trigger fetch when scrolled to the bottom
       ref.read(imageProvider.notifier).fetchImages();
     }
   }
 
-  // Check if the grid fills the screen on large screens and load more images if necessary
   void _checkIfMoreImagesNeeded() {
     if (_scrollController.hasClients &&
         _scrollController.position.maxScrollExtent == 0) {
-      // No scrolling available, fetch more images
       ref.read(imageProvider.notifier).fetchImages();
     }
   }
 
   @override
   Widget build(BuildContext context) {
+    final height = MediaQuery.of(context).size.height;
     return Scaffold(
-      appBar: AppBar(
-        title: Text("Galley View"),
+      backgroundColor: Colors.white,
+      body: CustomScrollView(
+        slivers: [
+          SliverAppBar(
+            expandedHeight: 250,
+            title: Text(
+              "Gallery View",
+              textScaleFactor: 2,
+            ),
+            centerTitle: true,
+            flexibleSpace: Column(
+              mainAxisAlignment: MainAxisAlignment.end,
+              crossAxisAlignment: CrossAxisAlignment.center,
+              children: [
+                SizedBox(
+                  width: height,
+                  child: TextField(
+                    expands: false,
+                    maxLines: 1,
+                    controller: _searchController,
+                    onSubmitted: (query) {
+                      ref
+                          .read(imageProvider.notifier)
+                          .reset(); // Reset before searching
+                      ref
+                          .read(imageProvider.notifier)
+                          .fetchImages(searchQuery: query);
+                    },
+                    decoration: InputDecoration(
+                      hintText: "Type something to Search...",
+                      border: OutlineInputBorder(
+                        borderSide: BorderSide(),
+                        borderRadius: BorderRadius.circular(25),
+                      ),
+                    ),
+                  ),
+                ),
+                SizedBox(
+                  height: 7,
+                ),
+                SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.start,
+                    children: _categories.map((category) {
+                      return Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 5),
+                        child: ChoiceChip(
+                          label: Text(category),
+                          selected: false,
+                          onSelected: (_) {
+                            ref.read(categoryProvider.notifier).fetchImages(
+                                searchQuery:
+                                    category); // Update selected category
+
+                            Navigator.push(
+                              context,
+                              MaterialPageRoute(
+                                builder: (context) =>
+                                    CategoryImagesView(category: category),
+                              ),
+                            ).then((_) {
+                              ref
+                                  .read(categoryProvider.notifier)
+                                  .reset(); // Clear the selected category when coming back
+                            });
+                          },
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ],
+            ),
+          ),
+          SliverFillRemaining(
+            child: _isDataReady
+                ? _buildGallery(context)
+                : _buildSplashScreen(context),
+          ),
+        ],
       ),
-      body: _isDataReady ? _buildGallery(context) : _buildSplashScreen(context),
     );
   }
 
   Widget _buildGallery(BuildContext context) {
+    final width = MediaQuery.of(context).size.width;
+    final height = MediaQuery.of(context).size.height;
     final images = ref.watch(imageProvider);
-    final isLoading = ref
-        .watch(imageProvider.notifier.select((provider) => provider.isLoading));
-    final hasMoreImages = ref.watch(
-        imageProvider.notifier.select((provider) => provider.hasMoreImages));
 
-    return Column(
-      children: [
-        Expanded(
-          child: LayoutBuilder(
-            builder: (context, constraints) {
-              return GridView.builder(
-                controller: _scrollController,
-                gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
-                  crossAxisCount: MediaQuery.of(context).size.width ~/ 350,
-                  crossAxisSpacing: 8,
-                  mainAxisSpacing: 8,
-                ),
-                itemCount: images.length,
-                itemBuilder: (context, index) {
-                  final image = images[index];
-                  return GestureDetector(
-                    onTap: () {
-                      // Open full-screen bottom sheet when an image is tapped
-                      showFullScreenImageDialog(context, image: image);
-                    },
-                    child: Card(
-                      borderOnForeground: true,
-                      clipBehavior: Clip.hardEdge,
-                      child: Column(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Expanded(
-                            child: Image.network(
-                              image.webformatURL,
-                              fit: BoxFit.cover,
-                            ),
-                          ),
-                          const SizedBox(height: 4),
-                          Padding(
-                            padding: const EdgeInsets.all(8.0),
-                            child: Row(
-                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                              children: [
-                                Row(
-                                  children: [
-                                    const FaIcon(
-                                      FontAwesomeIcons.solidHeart,
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text('${image.likes}'),
-                                  ],
-                                ),
-                                Row(
-                                  children: [
-                                    const FaIcon(
-                                      FontAwesomeIcons.solidEye,
-                                      size: 18,
-                                    ),
-                                    const SizedBox(width: 4),
-                                    Text('${image.views}'),
-                                  ],
-                                ),
-                              ],
-                            ),
-                          ),
-                        ],
-                      ),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
-        ),
-        if (isLoading && hasMoreImages)
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: CircularProgressIndicator(), // Show loading indicator
-          ),
-        if (!hasMoreImages)
-          const Padding(
-            padding: EdgeInsets.all(8.0),
-            child: Text('No more images to load.'),
-          ),
-      ],
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 10),
+      child: MasonryGridView.count(
+        controller: _scrollController,
+        crossAxisCount: (width ~/ height) + 2, // Adjust for proper grid layout
+        mainAxisSpacing: 10,
+        crossAxisSpacing: 10,
+        itemCount: images.length,
+        itemBuilder: (context, index) {
+          return ImageCard(image: images[index]);
+        },
+      ),
     );
   }
 
   Widget _buildSplashScreen(BuildContext context) {
-    return Container(
-      color: Colors.white, // Splash screen background color
-      child: Center(
-        child: Column(
-          mainAxisAlignment: MainAxisAlignment.center,
-          children: const [
-            CircularProgressIndicator(), // Replace with your animation or logo if needed
-            SizedBox(height: 16),
-            Text(
-              'Loading images...',
-              style: TextStyle(fontSize: 18),
-            ),
-          ],
-        ),
-      ),
-    );
+    return const Center(child: CircularProgressIndicator());
   }
 
   @override

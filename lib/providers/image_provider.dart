@@ -13,25 +13,29 @@ class ImageNotifier extends StateNotifier<List<ImageModel>> {
   bool _isLoading = false;
   bool _hasMoreImages = true;
   int _currentPage = 1;
+  String _searchQuery = "";
   final ImageController _imageController = ImageController();
 
-  // Method to fetch images
-  Future<void> fetchImages() async {
-    // Prevent multiple API requests at the same time
+  Future<void> fetchImages({String? searchQuery}) async {
     if (_isLoading || !_hasMoreImages) return;
+
+    if (searchQuery != null && searchQuery != _searchQuery) {
+      _searchQuery = searchQuery;
+      reset(); // Reset state when new search query is made
+    }
 
     _isLoading = true;
 
     try {
-      // Fetch new images from the API
-      final newImages = await _imageController.fetchImages(_currentPage);
+      final newImages = await _imageController.fetchImages(
+        page: _currentPage,
+        searchQuery: _searchQuery,
+      );
 
-      // If new images are received, append them to the current state
       if (newImages.isNotEmpty) {
         state = [...state, ...newImages];
-        _currentPage++; // Move to the next page
+        _currentPage++;
       } else {
-        // If no new images are received, stop further requests
         _hasMoreImages = false;
       }
     } catch (error) {
@@ -41,18 +45,13 @@ class ImageNotifier extends StateNotifier<List<ImageModel>> {
     }
   }
 
-  // Getter to check if loading is in progress
   bool get isLoading => _isLoading;
-
-  // Getter to check if there are more images to load
   bool get hasMoreImages => _hasMoreImages;
 
-  // Reset the provider completely and reload images from start
   void reset() {
     state = [];
     _isLoading = false;
     _hasMoreImages = true;
     _currentPage = 1;
-    fetchImages();
   }
 }
